@@ -1,7 +1,8 @@
 import os, json, time, logging
 from openai import OpenAI
 from .tools import TOOL_DEFINITIONS
-from .registry import list_instances, fresh_clone_and_launch
+from .registry import list_instances
+from .tools.pg_manager import fresh_clone_and_launch
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
 

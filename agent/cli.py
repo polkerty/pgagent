@@ -2,6 +2,8 @@ import click, logging, json, os
 from .registry import list_instances, remove_instance
 from .tools.pg_manager import fresh_clone_and_launch
 from .llm_agent import run_llm_loop
+from dotenv import load_dotenv
+load_dotenv()
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
 

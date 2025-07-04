@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=67", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pg-debugger"          # the package name you’ll `pip install`
+version = "0.0.1"
+description = "PostgreSQL debugger agent"
+authors = [{ name = "Jacob Brazeal" }]
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "openai>=1.5",
+    "psycopg[binary]>=3.1",
+    "GitPython>=3.1",
+    "click>=8.1",
+]
+
+[project.scripts]             # ← console-script entry point
+pg-debugger = "agent.cli:cli"
+
+# --- src-layout mapping ------------------------------------------
+[tool.setuptools.package-dir]
+"" = "."                    # tells setuptools that packages live in ./src
+
+# Optional: include package data, exclude tests from wheel, etc.

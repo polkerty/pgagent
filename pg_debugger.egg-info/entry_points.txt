@@ -1,0 +1,2 @@
+[console_scripts]
+pg-debugger = agent.cli:cli
