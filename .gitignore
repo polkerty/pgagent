@@ -2,3 +2,4 @@
 .venv
 __pycache__/
 .pytest_cache/
+pg_debugger.egg-info/
