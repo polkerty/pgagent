@@ -1,0 +1,73 @@
+Hi. I am working on a Postgresql debugger  agent. It should be 
+a classic LLM in a loop with tool calls;
+we should alternate thinking steps and tool-calling steps.
+Use the latest OpenAI patterns for LLM code -
+it's changed since your training data - and for tool calls:
+
+```
+from openai import OpenAI
+client = OpenAI()
+
+response = client.responses.create(
+    model="gpt-4.1",
+    input="Write a one-sentence bedtime story about a unicorn."
+)
+
+print(response.output_text)
+```
+
+```
+from openai import OpenAI
+
+client = OpenAI()
+
+tools = [{
+    "type": "function",
+    "name": "get_weather",
+    "description": "Get current temperature for a given location.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "location": {
+                "type": "string",
+                "description": "City and country e.g. Bogotá, Colombia"
+            }
+        },
+        "required": [
+            "location"
+        ],
+        "additionalProperties": False
+    }
+}]
+
+response = client.responses.create(
+    model="gpt-4.1",
+    input=[{"role": "user", "content": "What is the weather like in Paris today?"}],
+    tools=tools
+)
+
+print(response.output)
+```
+
+Here are the tools we need to support at first:
+
+* Read a file
+* Look up a code reference (ie, given the name of a method, the tool should be able to find its definition)
+* Execute a query and read the output.
+* Make an edit, recompile postgres, and relaunch 
+
+Underneath the hood, the tool should have a clone of the postgres repository, and 
+make a fresh copy for each invocation of the agent in a temporary directory whose
+location is displayed on the screen. The tool should maintain a registry file
+of all running copies of postgres with their port numbers  and any other helpful
+metadata - this registry should be written to before we launch another copy of postgres.
+(Make sure to use large port numbers so we don't have collisions with other existing processes.)
+The agent should provide a command line option to view and manage this registry. 
+On shutdown, the agent should shutdown all copies of postgres under its management first.
+Provide a CLI to manage everything the agent can do. Output lots of log messages and timing
+and status information as you go.
+
+The agent should take an open-ended prompt, and be ready to perform as either a general-purpose
+coding assistant or debugger. We'll add more tools later. 
+
+Please split your output up into many tightly-scoped files. 
