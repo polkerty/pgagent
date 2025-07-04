@@ -1,116 +1,165 @@
-import json, logging, os, pathlib, datetime
-from typing import Any, Dict
+"""
+llm_agent.py  •  Minimal think-act loop with summaries
 
+Flow per turn
+-------------
+Assistant:
+  1. Writes a short summary/plan.
+  2. Emits ONE function call (or the finish tool).
+
+Agent:
+  1. Prints the summary.
+  2. Executes the tool.
+  3. Appends the tool result as plain assistant text.
+
+Because every tool result is in the conversation, the model won’t repeat
+identical calls.
+"""
+
+from __future__ import annotations
+
+import datetime, json, logging, os, pathlib
+from typing import Any, Dict, List, Optional
+
+import psycopg
 from openai import OpenAI
 
-from .registry import list_instances
-from .tools import file_ops, code_lookup, query_exec
+from .registry import list_instances, remove_instance
+from .tools import code_lookup, file_ops, query_exec
 from .tools.pg_manager import fresh_clone_and_launch
 
-# ── setup logging ─────────────────────────────────────────────────────
+# ─────────────────────────── logging ────────────────────────────────
 LOG_DIR = pathlib.Path.home() / ".pg_debugger_agent"
-LOG_DIR.mkdir(exist_ok=True, parents=True)
-log_file = LOG_DIR / f"pgdbg-{datetime.date.today():%Y%m%d}.log"
+LOG_DIR.mkdir(parents=True, exist_ok=True)
+LOG_FILE = LOG_DIR / f"pgdbg-{datetime.date.today():%Y%m%d}.log"
 
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[
-        logging.StreamHandler(),                       # console
-        logging.FileHandler(log_file, encoding="utf-8")  # full file
-    ],
+    format="%(asctime)s %(levelname)s %(message)s",
+    handlers=[logging.StreamHandler(), logging.FileHandler(LOG_FILE, "a", "utf-8")],
 )
 
 client = OpenAI()
 
-# ── tool registry ─────────────────────────────────────────────────────
-def finish() -> str: return "done"
+# ─────────────────────────── tool registry ───────────────────────────
+def finish() -> str:  # sentinel
+    return "done"
 
-finish_spec = {
-    "type": "function",
-    "name": "finish",
-    "description": "Signal that the task is complete.",
-    "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
+TOOLS: Dict[str, Dict[str, Any]] = {
+    "read_file": {"impl": file_ops.read_file, "spec": file_ops.tool_spec},
+    "lookup_code_reference": {
+        "impl": code_lookup.lookup_code_reference,
+        "spec": code_lookup.tool_spec,
+    },
+    "execute_query": {"impl": query_exec.execute_query, "spec": query_exec.tool_spec},
+    "finish": {
+        "impl": finish,
+        "spec": {
+            "type": "function",
+            "name": "finish",
+            "description": "Signal that the task is complete.",
+            "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
+        },
+    },
 }
+TOOL_SPECS = [t["spec"] for t in TOOLS.values()]
 
-TOOL_FUNCS: Dict[str, Any] = {
-    "read_file": file_ops.read_file,
-    "lookup_code_reference": code_lookup.lookup_code_reference,
-    "execute_query": query_exec.execute_query,
-    "finish": finish,
-}
+# ───────────────────── sandbox helpers ───────────────────────────────
+def _ping(port: int) -> bool:
+    dsn = f"host=127.0.0.1 port={port} dbname=postgres connect_timeout=1"
+    for user in ("postgres", os.getenv("USER", "")):
+        try:
+            psycopg.connect(f"{dsn} user={user}").close()
+            return True
+        except psycopg.OperationalError:
+            continue
+    return False
 
-TOOL_SPECS = [
-    file_ops.tool_spec,
-    code_lookup.tool_spec,
-    query_exec.tool_spec,
-    finish_spec,
-]
 
-# ── helpers ───────────────────────────────────────────────────────────
-def _ensure_sandbox() -> int:
+def _ensure_sandbox(label: Optional[str]) -> tuple[str, int]:
     inst = list_instances()
-    if inst:
-        return next(iter(inst.values()))["port"]
+    if label:
+        info = inst.get(label)
+        if not info or not _ping(info["port"]):
+            raise RuntimeError(f"Sandbox '{label}' is not live.")
+        return label, info["port"]
+
+    for name, info in list(inst.items()):
+        if _ping(info["port"]):
+            return name, info["port"]
+        remove_instance(name)
+
     port, _ = fresh_clone_and_launch("default")
-    return port
+    return "default", port
 
 
-def _log_json(label: str, obj: Any):
-    logging.debug("%s: %s", label, json.dumps(obj, indent=2, default=str)[:10_000])  # cap
+# ───────────────────────── main loop ────────────────────────────────
+def run_llm_loop(
+    prompt: str,
+    sandbox_label: Optional[str] = None,
+    max_turns: int = 12,
+) -> None:
+    label, port = _ensure_sandbox(sandbox_label)
 
-
-# ── main loop ─────────────────────────────────────────────────────────
-def run_llm_loop(user_prompt: str, max_turns: int = 12) -> None:
-    port = _ensure_sandbox()
-    messages = [
+    conversation: List[Dict[str, Any]] = [
         {
             "role": "system",
             "content": (
-                f"You are a PostgreSQL assistant.  Always connect on port {port}. "
-                "When you are finished, call the `finish` tool."
+                "You are a PostgreSQL assistant. The database listens on "
+                f"port {port}. For **each turn**:\n"
+                "1. Write a brief summary of what you just observed and what "
+                "   you plan to do next.\n"
+                "2. Emit exactly ONE tool call (or call `finish`).\n"
+                "Respond with plain text plus the function call."
             ),
         },
-        {"role": "user", "content": user_prompt},
+        {"role": "user", "content": prompt},
     ]
 
-    for turn in range(1, max_turns + 1):
-        logging.info("🔄  Turn %d — sending %d messages", turn, len(messages))
-        _log_json("➡️  request", messages)
-
-        response = client.responses.create(
-            model="gpt-4.1",
-            input=messages,
-            tools=TOOL_SPECS,
+    for turn in range(max_turns):
+        resp = client.responses.create(
+            model="gpt-4.1", input=conversation, tools=TOOL_SPECS
         )
 
-        assistant_output = response.output
-        _log_json("⬅️  raw-response", assistant_output)
-
-        # Plain assistant text?
-        if isinstance(assistant_output, str):
-            logging.info("🤖 %s", assistant_output.strip().splitlines()[0][:120])
-            messages.append({"role": "assistant", "content": assistant_output})
+        # Assistant wrote plain text summary + maybe call
+        if isinstance(resp.output, str):
+            summary = resp.output_text
+            print(summary)
+            conversation.append({"role": "assistant", "content": summary})
+            if summary.lower().startswith("done"):
+                break
             continue
 
-        # Function calls
-        for call in assistant_output:
-            if getattr(call, "type", "") != "function_call":
+        # Handle list (summary message + one function call)
+        for item in resp.output:
+            if getattr(item, "type", "") != "function_call":
+                text = item.content[0].text
+
+                print(text)
+                if text.strip():
+                    print(text)
+                    conversation.append({"role": "assistant", "content": text})
                 continue
 
-            logging.info("🔧 call  %-20s args=%s", call.name, call.arguments)
-            func = TOOL_FUNCS.get(call.name)
+            call = item
+            tool = TOOLS[call.name]["impl"]
             args = json.loads(call.arguments or "{}")
 
             try:
-                result = func(**args) if func else f"❌ unknown tool {call.name}"
+                result = tool(**args)
             except Exception as exc:
-                result = f"❌ Tool error: {exc}"
+                result = f"❌ {exc.__class__.__name__}: {exc}"
 
-            logging.info("✅ result %-20s %s", call.name, str(result)[:80])
-            messages.append({"role": "assistant", "content": str(result)})
+            logging.info("🔧 %-15s %s", call.name, args)
+            logging.info("✅ %-15s %s", call.name, str(result)[:120])
+
+            # Append result as plain assistant text
+            conversation.append(
+                {"role": "assistant", "content": f"{call.name} result: {result}"}
+            )
+
             if call.name == "finish":
                 print("✔️  Agent: done.")
                 return
 
-    logging.warning("⚠️  Gave up after %d turns without `finish`.", max_turns)
+    logging.warning("Stopped after %d turns without finish.", max_turns)

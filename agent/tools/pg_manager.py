@@ -41,8 +41,16 @@ def _build_and_install(workdir: pathlib.Path, env) -> None:
 # ───────────────────────── Postgres control ─────────────────────────
 
 
-def _initdb(bin_dir: pathlib.Path, datadir: pathlib.Path, env) -> None:
-    _run([str(bin_dir / "initdb"), "-D", str(datadir)], env=env)
+def _initdb(bin_dir: pathlib.Path, datadir: pathlib.Path, env):
+    # create super-user `postgres` and allow trust auth on the local socket
+    _run([
+            str(bin_dir / "initdb"),
+            "-D", str(datadir),
+           "--username=postgres",
+          "--auth=trust",
+          ],
+        env=env,
+    )
 
 
 def _start_postgres(bin_dir: pathlib.Path, datadir: pathlib.Path, port: int, env) -> None:

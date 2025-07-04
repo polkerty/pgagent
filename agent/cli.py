@@ -12,10 +12,11 @@ def cli():
     pass
 
 @cli.command()
+@click.option("--sandbox", "-s", help="Label of an existing sandbox to use.")
 @click.argument("prompt")
-def run_agent(prompt):
+def run_agent(prompt, sandbox):
     """Start an interactive LLM session."""
-    run_llm_loop(prompt)
+    run_llm_loop(prompt, sandbox_label=sandbox)
 
 @cli.command()
 def list():
