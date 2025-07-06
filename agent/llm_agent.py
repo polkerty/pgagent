@@ -35,11 +35,11 @@ LOG_DIR = pathlib.Path.home() / ".pg_debugger_agent"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 LOG_FILE = LOG_DIR / f"pgdbg-{datetime.date.today():%Y%m%d}.log"
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(message)s",
-    handlers=[logging.StreamHandler(), logging.FileHandler(LOG_FILE, "a", "utf-8")],
-)
+# logging.basicConfig(
+#     level=logging.INFO,
+#     format="%(asctime)s %(levelname)s %(message)s",
+#     handlers=[logging.StreamHandler(), logging.FileHandler(LOG_FILE, "a", "utf-8")],
+# )
 
 client = OpenAI()
 
@@ -111,7 +111,7 @@ def _log_conversation(prompt, turn, conversation):
         "conversation": conversation
     }
     with open(LOG_FILE, 'a') as f:
-        json.dump(conversation, f)
+        json.dump(out, f)
         f.write('\n')
 
 # ───────────────────────── main loop ────────────────────────────────
@@ -128,8 +128,10 @@ def run_llm_loop(
         {
             "role": "system",
             "content": (
-                "You are a PostgreSQL assistant. The database listens on "
-                f"port {port}. For **each turn**:\n"
+                "You are a PostgreSQL assistant. You will help the user with a request stated below.\n"
+                "You will see various notes here, possibly including your previous progress and tool calls."
+                "Think carefully about what the next thing you want to do is - likely you'll want to use one of these tools."
+                "Even if you are using one of the tools, make sure to ALSO output text as follows:"
                 "1. Write a brief summary of what you just observed and what "
                 "   you plan to do next.\n"
                 "2. Emit exactly ONE tool call (or call `finish`).\n"
@@ -145,8 +147,7 @@ def run_llm_loop(
             model="gpt-4.1", input=conversation, tools=TOOL_SPECS
         )
 
-        # Assistant wrote plain text summary + maybe call
-        if isinstance(resp.output, str):
+        if resp.output_text:
             summary = resp.output_text
             print(summary)
             conversation.append({"role": "assistant", "content": summary})
@@ -170,7 +171,7 @@ def run_llm_loop(
 
             # Append result as plain assistant text
             conversation.append(
-                {"role": "assistant", "content": f"{call.name} result: {result}"}
+                {"role": "assistant", "content": f"{call.name}({json.dumps(args)}) result: {result}"}
             )
 
             if call.name == "finish":
