@@ -44,8 +44,8 @@ logging.basicConfig(
 client = OpenAI()
 
 # ─────────────────────────── tool registry ───────────────────────────
-def finish() -> str:  # sentinel
-    return "done"
+def finish(summary) -> str:
+    return summary
 
 TOOLS: Dict[str, Dict[str, Any]] = {
     "read_file": {"impl": file_ops.read_file, "spec": file_ops.tool_spec},
@@ -61,8 +61,15 @@ TOOLS: Dict[str, Dict[str, Any]] = {
         "spec": {
             "type": "function",
             "name": "finish",
-            "description": "Signal that the task is complete.",
-            "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
+            "description": "Signal that the task is complete. Please include a summary of what you did and the ultimate outcome of your efforts.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "summary": { "type": "string" },
+                },
+                "required": ["summary"],
+                "additionalProperties": False
+            },
         },
     },
 }
@@ -143,19 +150,10 @@ def run_llm_loop(
             summary = resp.output_text
             print(summary)
             conversation.append({"role": "assistant", "content": summary})
-            if summary.lower().startswith("done"):
-                break
-            continue
 
-        # Handle list (summary message + one function call)
+        # Tool calls
         for item in resp.output:
             if getattr(item, "type", "") != "function_call":
-                text = item.content[0].text
-
-                print(text)
-                if text.strip():
-                    print(text)
-                    conversation.append({"role": "assistant", "content": text})
                 continue
 
             call = item
