@@ -25,8 +25,10 @@ import psycopg
 from openai import OpenAI
 
 from .registry import list_instances, remove_instance
-from .tools import code_lookup, file_ops, query_exec
+from .tools import code_lookup, file_ops, query_exec, search_code, list_dir
 from .tools.pg_manager import fresh_clone_and_launch
+
+from . import context
 
 # ─────────────────────────── logging ────────────────────────────────
 LOG_DIR = pathlib.Path.home() / ".pg_debugger_agent"
@@ -52,6 +54,8 @@ TOOLS: Dict[str, Dict[str, Any]] = {
         "spec": code_lookup.tool_spec,
     },
     "execute_query": {"impl": query_exec.execute_query, "spec": query_exec.tool_spec},
+    "list_dir":  {"impl": list_dir.list_dir,   "spec": list_dir.tool_spec},
+    "search_code": {"impl": search_code.search_code, "spec": search_code.tool_spec},
     "finish": {
         "impl": finish,
         "spec": {
@@ -100,6 +104,8 @@ def run_llm_loop(
     max_turns: int = 12,
 ) -> None:
     label, port = _ensure_sandbox(sandbox_label)
+
+    context.ACTIVE_LABEL = label            
 
     conversation: List[Dict[str, Any]] = [
         {

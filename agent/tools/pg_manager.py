@@ -85,6 +85,8 @@ def fresh_clone_and_launch(label: str) -> Tuple[int, pathlib.Path]:
     _start_postgres(bin_dir, datadir, port, env)
 
     add_instance(label, port, workdir)
+
+    os.environ["PG_DEBUGGER_SRC"] = str(workdir)
     print(f"🌱 launched {label} on port {port} in {workdir}")
     print("Set PG_DEBUGGER_SRC to this path for code lookups.")
     return port, workdir

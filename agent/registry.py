@@ -35,3 +35,9 @@ def next_free_port():
         p = random.randint(56000, 60000)
         if p not in used:
             return p
+
+def src_path(label: str) -> pathlib.Path:
+    info = list_instances().get(label)
+    if not info:
+        raise RuntimeError(f"Sandbox '{label}' not known")
+    return pathlib.Path(info["path"])

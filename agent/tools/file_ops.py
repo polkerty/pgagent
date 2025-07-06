@@ -1,7 +1,9 @@
-import pathlib, json, os, base64
+from .. import context 
 
 def read_file(path: str) -> str:
-    p = pathlib.Path(path)
+    root = context.src_root()
+    p = root / path
+
     if not p.exists():
         raise FileNotFoundError(path)
     return p.read_text()
