@@ -97,11 +97,21 @@ def _ensure_sandbox(label: Optional[str]) -> tuple[str, int]:
     return "default", port
 
 
+def _log_conversation(prompt, turn, conversation):
+    out = {
+        "turn": turn,
+        "prompt": prompt,
+        "conversation": conversation
+    }
+    with open(LOG_FILE, 'a') as f:
+        json.dump(conversation, f)
+        f.write('\n')
+
 # ───────────────────────── main loop ────────────────────────────────
 def run_llm_loop(
     prompt: str,
     sandbox_label: Optional[str] = None,
-    max_turns: int = 12,
+    max_turns: int = 99,
 ) -> None:
     label, port = _ensure_sandbox(sandbox_label)
 
@@ -123,6 +133,7 @@ def run_llm_loop(
     ]
 
     for turn in range(max_turns):
+        _log_conversation(prompt, turn, conversation)
         resp = client.responses.create(
             model="gpt-4.1", input=conversation, tools=TOOL_SPECS
         )
@@ -167,5 +178,7 @@ def run_llm_loop(
             if call.name == "finish":
                 print("✔️  Agent: done.")
                 return
+            
+        
 
     logging.warning("Stopped after %d turns without finish.", max_turns)
