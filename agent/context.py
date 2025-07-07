@@ -10,6 +10,8 @@ from .registry import list_instances
 
 ACTIVE_LABEL: str | None = None        # set by llm_agent at runtime
 
+def get_label():
+    return ACTIVE_LABEL
 
 def src_root() -> pathlib.Path:
     if not ACTIVE_LABEL:

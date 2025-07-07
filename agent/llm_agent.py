@@ -25,7 +25,7 @@ import psycopg
 from openai import OpenAI
 
 from .registry import list_instances, remove_instance
-from .tools import code_lookup, file_ops, query_exec, search_code, list_dir
+from .tools import code_lookup, file_ops, query_exec, search_code, list_dir, get_patch
 from .tools.pg_manager import fresh_clone_and_launch
 
 from . import context
@@ -56,6 +56,7 @@ TOOLS: Dict[str, Dict[str, Any]] = {
     "execute_query": {"impl": query_exec.execute_query, "spec": query_exec.tool_spec},
     "list_dir":  {"impl": list_dir.list_dir,   "spec": list_dir.tool_spec},
     "search_code": {"impl": search_code.search_code, "spec": search_code.tool_spec},
+    "get_patch": {"impl": get_patch.get_patch, "spec": get_patch.tool_spec},
     "finish": {
         "impl": finish,
         "spec": {
@@ -129,7 +130,8 @@ def run_llm_loop(
             "role": "system",
             "content": (
                 "You are a PostgreSQL assistant. You will help the user with a request stated below.\n"
-                "You will see various notes here, possibly including your previous progress and tool calls."
+                "You will see various notes here, possibly including your previous progress and tool calls.\n"
+                f"Your test database is running on port {port}.\n"
                 "Think carefully about what the next thing you want to do is - likely you'll want to use one of these tools."
                 "Even if you are using one of the tools, make sure to ALSO output text as follows:"
                 "1. Write a brief summary of what you just observed and what "
